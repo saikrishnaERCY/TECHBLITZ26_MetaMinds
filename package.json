@@ -1,0 +1,32 @@
+{
+  "name": "techblitz26_metaminds",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saikrishnaERCY/TECHBLITZ26_MetaMinds.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/saikrishnaERCY/TECHBLITZ26_MetaMinds/issues"
+  },
+  "homepage": "https://github.com/saikrishnaERCY/TECHBLITZ26_MetaMinds#readme",
+  "dependencies": {
+    "axios": "^1.13.6",
+    "body-parser": "^2.2.2",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "mongoose": "^9.3.0",
+    "node-telegram-bot-api": "^0.67.0",
+    "nodemailer": "^8.0.2",
+    "twilio": "^5.13.0",
+    "uuid": "^13.0.0"
+  }
+}
