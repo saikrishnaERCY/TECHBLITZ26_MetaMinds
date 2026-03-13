@@ -66,12 +66,19 @@ router.get('/facebook', (req, res) => {
 // ✅ WhatsApp replies - MUST be before /:source route
 router.post('/whatsapp', async (req, res) => {
   console.log('🔔 WHATSAPP HIT! Body:', JSON.stringify(req.body));
+
+  // Twilio needs XML response - NOT sendStatus(200) or it sends "OK" as message!
+  const twilioResponse = () => {
+    res.set('Content-Type', 'text/xml');
+    res.send('<Response></Response>');
+  };
+
   try {
     const body = req.body;
     const from = body.From?.replace('whatsapp:', '').replace(/\s+/g, '');
     const message = body.Body;
 
-    if (!from || !message) return res.sendStatus(200);
+    if (!from || !message) return twilioResponse();
 
     const last10 = from.replace(/\D/g, '').slice(-10);
     console.log(`🔍 Incoming from: ${from}, last10: ${last10}`);
@@ -93,10 +100,10 @@ router.post('/whatsapp', async (req, res) => {
     if (existingLead) {
       console.log(`✅ Found lead: ${existingLead.name} | status: ${existingLead.status}`);
 
-      // Only AI reply if active
+      // Only AI reply if active or approved
       if (!['approved', 'active'].includes(existingLead.status)) {
         console.log(`⚠️ Lead status is ${existingLead.status} - not replying yet`);
-        return res.sendStatus(200);
+        return twilioResponse();
       }
 
       // Continue conversation directly - NO telegram interruption
@@ -107,9 +114,11 @@ router.post('/whatsapp', async (req, res) => {
         const { sendWhatsApp } = require('../services/whatsappService');
         await sendWhatsApp(from, aiReply);
         console.log(`🤖 AI replied: ${aiReply}`);
+      } else {
+        console.log('⚠️ AI returned no reply');
       }
 
-      return res.sendStatus(200);
+      return twilioResponse();
     }
 
     // Brand new number - create lead and ask CC on Telegram
@@ -140,11 +149,11 @@ router.post('/whatsapp', async (req, res) => {
     await lead.save();
 
     console.log(`📱 Telegram notified for new WhatsApp lead: ${lead.name}`);
-    res.sendStatus(200);
+    return twilioResponse();
 
   } catch (error) {
     console.error('❌ WhatsApp error:', error);
-    res.sendStatus(200);
+    return twilioResponse();
   }
 });
 
@@ -167,7 +176,7 @@ router.post('/:source', async (req, res) => {
       if (existing) return res.status(200).json({ status: 'duplicate' });
     }
 
-    // Save lead
+    // Save lead as pending - wait for CC approval
     const lead = new Lead(normalized);
     lead.status = 'pending';
     lead.addActivity('lead_received', `From ${source}`);
@@ -182,8 +191,7 @@ router.post('/:source', async (req, res) => {
     lead.addActivity('ai_scored', `Score: ${aiScore.score}/10`);
     await lead.save();
 
-    // Notify Telegram - CC must APPROVE first
-    // WhatsApp + Email sent ONLY after approval (in telegram.js)
+    // Notify Telegram - WhatsApp + Email sent ONLY after CC approves
     const msgId = await notifyNewLead(lead, aiScore);
     lead.telegramMessageId = msgId;
     await lead.save();
