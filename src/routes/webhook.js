@@ -113,51 +113,63 @@ router.post('/whatsapp', async (req, res) => {
 
     if (!from || !message) return res.sendStatus(200);
 
-    console.log(`📱 WhatsApp reply from: "${from}" message: "${message}"`);
-
-    // Strip everything and just keep last 10 digits for matching
     const last10 = from.replace(/\D/g, '').slice(-10);
-    console.log(`🔍 Looking for lead with last 10 digits: ${last10}`);
 
-    // Find ALL active leads and log them for debugging
-    const allLeads = await Lead.find({ status: { $in: ['approved', 'active'] } });
-    console.log(`📋 Active leads:`, allLeads.map(l => ({ name: l.name, phone: l.phone, status: l.status })));
-
-    // Match by last 10 digits of phone
-    const lead = allLeads.find(l => {
-      if (!l.phone) return false;
-      const leadLast10 = l.phone.replace(/\D/g, '').slice(-10);
-      console.log(`Comparing: ${leadLast10} vs ${last10}`);
-      return leadLast10 === last10;
+    // ✅ FIRST check if existing active lead exists
+    const allActiveLeads = await Lead.find({ 
+      status: { $in: ['approved', 'active'] } 
     });
 
-    if (!lead) {
-      console.log(`❌ No active lead found for ${from}`);
-      // Send a fallback message so customer isn't left hanging
-      const { sendWhatsApp } = require('../services/whatsappService');
-      await sendWhatsApp(from, `Hi! Thanks for messaging Sparkle Jewellery ✦\nPlease fill our enquiry form and our team will get back to you shortly!`);
+    const existingLead = allActiveLeads.find(l => {
+      if (!l.phone) return false;
+      return l.phone.replace(/\D/g, '').slice(-10) === last10;
+    });
+
+    // ✅ If existing lead found — just continue conversation, NO telegram alert
+    if (existingLead) {
+      console.log(`✅ Continuing conversation with ${existingLead.name}`);
+      const { handleCustomerMessage } = require('../services/conversationService');
+      const aiReply = await handleCustomerMessage(existingLead._id, message);
+      if (aiReply) {
+        const { sendWhatsApp } = require('../services/whatsappService');
+        await sendWhatsApp(from, aiReply);
+        console.log(`🤖 AI replied to ${existingLead.name}`);
+      }
       return res.sendStatus(200);
     }
 
-    console.log(`✅ Found lead: ${lead.name} — getting AI reply...`);
+    // ❌ No existing lead — this is a brand new customer
+    // Create lead and notify Telegram for approval
+    console.log(`🆕 New WhatsApp lead from ${from}`);
+    const normalized = {
+      source: 'whatsapp',
+      name: body.ProfileName || 'WhatsApp User',
+      phone: from,
+      message: message,
+      sourceUserId: from,
+      sourcePlatformData: body
+    };
 
-    // Update lead status to active
-    lead.status = 'active';
+    const lead = new Lead(normalized);
+    lead.addActivity('lead_received', 'From WhatsApp');
     await lead.save();
 
-    // Get AI reply
-    const { handleCustomerMessage } = require('../services/conversationService');
-    const aiReply = await handleCustomerMessage(lead._id, message);
+    const { scoreLead } = require('../services/aiService');
+    const aiScore = await scoreLead(normalized);
+    lead.score = aiScore.score;
+    lead.intent = aiScore.intent;
+    lead.scoreReason = aiScore.scoreReason;
+    lead.interest = aiScore.interest;
+    await lead.save();
 
-    if (aiReply) {
-      const { sendWhatsApp } = require('../services/whatsappService');
-      await sendWhatsApp(from, aiReply);
-      console.log(`🤖 AI replied: "${aiReply}"`);
-    }
+    const { notifyNewLead } = require('../services/telegramService');
+    const msgId = await notifyNewLead(lead, aiScore);
+    lead.telegramMessageId = msgId;
+    await lead.save();
 
     res.sendStatus(200);
   } catch (error) {
-    console.error('❌ WhatsApp reply error:', error);
+    console.error('❌ WhatsApp error:', error);
     res.sendStatus(200);
   }
 });
