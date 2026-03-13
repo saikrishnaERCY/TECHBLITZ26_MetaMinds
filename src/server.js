@@ -118,7 +118,7 @@ app.get('/terms', (req, res) => {
 });
 
 // Follow-ups every hour
-setInterval(() => runFollowUps().catch(console.error), 60 * 60 * 1000);
+setInterval(() => pollYouTubeComments().catch(console.error), 60 * 1000); // every 1 min
 
 // Keep Render awake every 14 minutes
 setInterval(() => {
