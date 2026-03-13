@@ -90,12 +90,19 @@ router.post('/whatsapp', async (req, res) => {
       console.log(`  - ${l.name} | phone: ${l.phone} | status: ${l.status}`);
     });
 
-    const existingLead = allLeads.find(l => {
-      if (!l.phone) return false;
-      const stored = l.phone.replace(/\D/g, '').slice(-10);
-      console.log(`  Comparing stored: ${stored} vs incoming: ${last10}`);
-      return stored === last10;
-    });
+    const matchingLeads = allLeads.filter(l => {
+  if (!l.phone) return false;
+  const stored = l.phone.replace(/\D/g, '').slice(-10);
+  return stored === last10;
+});
+
+console.log(`📋 Matching leads for ${last10}:`, matchingLeads.map(l => `${l.name} - ${l.status}`));
+
+// Prioritize active leads first, then approved, then most recent
+const existingLead = 
+  matchingLeads.find(l => l.status === 'active') ||
+  matchingLeads.find(l => l.status === 'approved') ||
+  matchingLeads[matchingLeads.length - 1];
 
     if (existingLead) {
       console.log(`✅ Found lead: ${existingLead.name} | status: ${existingLead.status}`);
