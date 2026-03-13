@@ -23,7 +23,7 @@ connectDB();
 app.use('/webhook', require('./routes/webhook'));
 app.use('/customer', require('./routes/customer'));
 app.use('/gmail', require('./routes/gmail'));
-
+app.use('/social', require('./routes/social'));
 app.get('/', (req, res) => {
   res.json({ 
     status: '🟢 Lead Agent Running', 
@@ -35,6 +35,58 @@ app.get('/', (req, res) => {
 app.get('/ping', (req, res) => res.send('pong'));
 
 initTelegramHandlers();
+// YouTube comment polling every 10 minutes
+const { getLatestComments, repliedComments } = require('./services/youtubeService');
+const { scoreLead: scoreLeadYT } = require('./services/aiService');
+
+async function pollYouTubeComments() {
+  try {
+    const comments = await getLatestComments();
+    console.log(`▶️ YouTube: checking ${comments.length} comments`);
+
+    for (const comment of comments) {
+      if (repliedComments.has(comment.commentId)) continue;
+
+      // Create lead for each new comment
+      const Lead = require('./models/Lead');
+      const existing = await Lead.findOne({ sourceUserId: comment.authorChannelId });
+      if (existing) continue;
+
+      const leadData = {
+        source: 'youtube',
+        name: comment.authorName,
+        sourceUserId: comment.authorChannelId,
+        message: comment.text,
+        interest: comment.videoTitle,
+        status: 'pending'
+      };
+
+      const lead = new Lead(leadData);
+      lead.addActivity('lead_received', `YouTube comment on: ${comment.videoTitle}`);
+      await lead.save();
+
+      const aiScore = await scoreLeadYT(leadData);
+      lead.score = aiScore.score;
+      lead.intent = aiScore.intent;
+      lead.scoreReason = aiScore.scoreReason;
+      lead.interest = aiScore.interest;
+      await lead.save();
+
+      const { notifyNewLead, sendToCC } = require('./services/telegramService');
+      await notifyNewLead(lead, aiScore);
+      await sendToCC(`▶️ *YouTube Comment*\n${comment.authorName} on _"${comment.videoTitle}"_:\n_"${comment.text}"_`);
+
+      repliedComments.add(comment.commentId);
+      console.log(`▶️ New YouTube lead: ${comment.authorName}`);
+    }
+  } catch (err) {
+    console.error('❌ YouTube polling error:', err.message);
+  }
+}
+
+// Poll YouTube every 10 minutes
+setInterval(() => pollYouTubeComments().catch(console.error), 10 * 60 * 1000);
+setTimeout(() => pollYouTubeComments().catch(console.error), 5000);
 
 // Telegram webhook for production (Render)
 if (process.env.RENDER === 'true') {
