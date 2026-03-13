@@ -4,15 +4,9 @@ let bot;
 
 function getBot() {
   if (!bot) {
-    const isProduction = process.env.RENDER === 'true';
-    
-    if (isProduction) {
-      // Use webhook mode on Render (no polling conflict!)
-      bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
-    } else {
-      // Use polling only on local
-      bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
-    }
+    bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { 
+      polling: process.env.RENDER !== 'true'
+    });
   }
   return bot;
 }

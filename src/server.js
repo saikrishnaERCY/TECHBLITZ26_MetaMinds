@@ -38,6 +38,7 @@ if (process.env.RENDER === 'true') {
   }, 3000);
 
   app.post('/telegram-webhook', (req, res) => {
+    console.log('📩 Telegram update received:', JSON.stringify(req.body));
     getBot().processUpdate(req.body);
     res.sendStatus(200);
   });
