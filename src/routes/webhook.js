@@ -76,10 +76,22 @@ router.post('/:source', async (req, res) => {
     lead.addActivity('ai_scored', `Score: ${aiScore.score}/10`);
     await lead.save();
 
-    const msgId = await notifyNewLead(lead, aiScore);
-    lead.telegramMessageId = msgId;
-    await lead.save();
+   // AUTO APPROVE - notify CC but don't wait for approval
+lead.status = 'active';
+await lead.save();
 
+// Send WhatsApp + Email immediately
+const { sendApprovalMessage } = require('../services/whatsappService');
+const { sendLeadConfirmationEmail } = require('../services/emailService');
+await Promise.allSettled([
+  sendApprovalMessage(lead),
+  sendLeadConfirmationEmail(lead)
+]);
+
+// Just notify CC (no approve/reject needed)
+const msgId = await notifyNewLead(lead, aiScore);
+lead.telegramMessageId = msgId;
+await lead.save();
     res.status(200).json({ status: 'received', leadId: lead._id });
   } catch (error) {
     console.error('Webhook error:', error);

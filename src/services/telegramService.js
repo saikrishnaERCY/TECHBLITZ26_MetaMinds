@@ -39,11 +39,17 @@ ID: \`${lead._id}\`
 `;
 
   const keyboard = {
-    inline_keyboard: [[
-      { text: '✅ APPROVE', callback_data: `approve_${lead._id}` },
+  inline_keyboard: [
+    [
+      { text: '⏸️ PAUSE AI', callback_data: `pause_${lead._id}` },
       { text: '❌ REJECT', callback_data: `reject_${lead._id}` }
-    ]]
-  };
+    ],
+    [
+      { text: '👨‍💼 TAKE OVER', callback_data: `takeover_${lead._id}` },
+      { text: '✅ CONVERTED', callback_data: `converted_${lead._id}` }
+    ]
+  ]
+};
 
   const msg = await bot.sendMessage(CC_CHAT_ID(), text, {
     parse_mode: 'Markdown',
