@@ -22,6 +22,7 @@ connectDB();
 
 app.use('/webhook', require('./routes/webhook'));
 app.use('/customer', require('./routes/customer'));
+app.use('/gmail', require('./routes/gmail'));
 
 app.get('/', (req, res) => {
   res.json({ 
