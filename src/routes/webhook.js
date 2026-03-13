@@ -117,13 +117,18 @@ router.post('/whatsapp', async (req, res) => {
 
     // ✅ FIRST check if existing active lead exists
     const allActiveLeads = await Lead.find({ 
-      status: { $in: ['approved', 'active'] } 
-    });
+  status: { $in: ['approved', 'active', 'pending'] } 
+});
 
     const existingLead = allActiveLeads.find(l => {
-      if (!l.phone) return false;
-      return l.phone.replace(/\D/g, '').slice(-10) === last10;
-    });
+  if (!l.phone) return false;
+  const storedLast10 = l.phone.replace(/\D/g, '').slice(-10);
+  const incomingLast10 = last10;
+  console.log(`Comparing stored: ${storedLast10} vs incoming: ${incomingLast10}`);
+  return storedLast10 === incomingLast10;
+});
+
+console.log(`🔍 Found lead: ${existingLead ? existingLead.name : 'NONE'}`);
 
     // ✅ If existing lead found — just continue conversation, NO telegram alert
     if (existingLead) {
