@@ -22,9 +22,15 @@ app.use('/webhook', require('./routes/webhook'));
 app.use('/customer', require('./routes/customer'));
 
 app.get('/', (req, res) => {
-  res.json({ status: '🟢 Lead Agent Running', business: process.env.BUSINESS_NAME });
+  res.json({ 
+    status: '🟢 Lead Agent Running', 
+    business: process.env.BUSINESS_NAME,
+    timestamp: new Date().toISOString()
+  });
 });
 
+// Keep alive endpoint
+app.get('/ping', (req, res) => res.send('pong'));
 initTelegramHandlers();
 // Set Telegram webhook for production
 // Set Telegram webhook for production
