@@ -29,7 +29,7 @@ function normalizeLead(source, body) {
       return {
         source: 'whatsapp',
         name: body.ProfileName || 'WhatsApp User',
-        phone: body.From?.replace('whatsapp:', '') || body.phone,
+        phone: body.From?.replace('whatsapp:', '').replace(/\s+/g, '') || body.phone,
         message: body.Body || body.message || '',
         sourceUserId: body.From,
         sourcePlatformData: body
@@ -46,60 +46,7 @@ function normalizeLead(source, body) {
   }
 }
 
-router.post('/:source', async (req, res) => {
-  try {
-    const { source } = req.params;
-    const normalized = normalizeLead(source, req.body);
-
-    if (!normalized.message && !normalized.email && !normalized.phone) {
-      return res.status(200).json({ status: 'ignored' });
-    }
-
-    // Prevent duplicate leads from same user within 1 hour
-    if (normalized.sourceUserId) {
-      const existing = await Lead.findOne({
-        sourceUserId: normalized.sourceUserId,
-        createdAt: { $gte: new Date(Date.now() - 60 * 60 * 1000) }
-      });
-      if (existing) return res.status(200).json({ status: 'duplicate' });
-    }
-
-    const lead = new Lead(normalized);
-    lead.addActivity('lead_received', `From ${source}`);
-    await lead.save();
-
-    const aiScore = await scoreLead(normalized);
-    lead.score = aiScore.score;
-    lead.intent = aiScore.intent;
-    lead.scoreReason = aiScore.scoreReason;
-    lead.interest = aiScore.interest;
-    lead.addActivity('ai_scored', `Score: ${aiScore.score}/10`);
-    await lead.save();
-
-   // AUTO APPROVE - notify CC but don't wait for approval
-lead.status = 'active';
-await lead.save();
-
-// Send WhatsApp + Email immediately
-const { sendApprovalMessage } = require('../services/whatsappService');
-const { sendLeadConfirmationEmail } = require('../services/emailService');
-await Promise.allSettled([
-  sendApprovalMessage(lead),
-  sendLeadConfirmationEmail(lead)
-]);
-
-// Just notify CC (no approve/reject needed)
-const msgId = await notifyNewLead(lead, aiScore);
-lead.telegramMessageId = msgId;
-await lead.save();
-    res.status(200).json({ status: 'received', leadId: lead._id });
-  } catch (error) {
-    console.error('Webhook error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Meta verification for Instagram/Facebook
+// ✅ Meta verification - MUST be before /:source route
 router.get('/instagram', (req, res) => {
   if (req.query['hub.verify_token'] === process.env.WEBHOOK_SECRET) {
     res.send(req.query['hub.challenge']);
@@ -115,7 +62,8 @@ router.get('/facebook', (req, res) => {
     res.status(403).send('Forbidden');
   }
 });
-// Handle WhatsApp REPLIES from customer
+
+// ✅ WhatsApp replies - MUST be before /:source route
 router.post('/whatsapp', async (req, res) => {
   console.log('🔔 WHATSAPP HIT! Body:', JSON.stringify(req.body));
   try {
@@ -128,7 +76,7 @@ router.post('/whatsapp', async (req, res) => {
     const last10 = from.replace(/\D/g, '').slice(-10);
     console.log(`🔍 Incoming from: ${from}, last10: ${last10}`);
 
-    // Find existing lead by phone
+    // Find ALL leads and log for debugging
     const allLeads = await Lead.find({});
     console.log(`📋 Total leads in DB: ${allLeads.length}`);
     allLeads.forEach(l => {
@@ -138,20 +86,20 @@ router.post('/whatsapp', async (req, res) => {
     const existingLead = allLeads.find(l => {
       if (!l.phone) return false;
       const stored = l.phone.replace(/\D/g, '').slice(-10);
-      console.log(`  Comparing: stored=${stored} vs incoming=${last10}`);
+      console.log(`  Comparing stored: ${stored} vs incoming: ${last10}`);
       return stored === last10;
     });
 
     if (existingLead) {
-      console.log(`✅ Found lead: ${existingLead.name} status: ${existingLead.status}`);
+      console.log(`✅ Found lead: ${existingLead.name} | status: ${existingLead.status}`);
 
-      // Only reply if approved or active
+      // Only AI reply if active
       if (!['approved', 'active'].includes(existingLead.status)) {
-        console.log(`⚠️ Lead not approved yet, ignoring`);
+        console.log(`⚠️ Lead status is ${existingLead.status} - not replying yet`);
         return res.sendStatus(200);
       }
 
-      // Continue conversation - NO telegram needed
+      // Continue conversation directly - NO telegram interruption
       const { handleCustomerMessage } = require('../services/conversationService');
       const aiReply = await handleCustomerMessage(existingLead._id, message);
 
@@ -164,8 +112,8 @@ router.post('/whatsapp', async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // Brand new number - create lead and ask CC
-    console.log(`🆕 New number ${from} - creating lead`);
+    // Brand new number - create lead and ask CC on Telegram
+    console.log(`🆕 New WhatsApp lead from ${from}`);
     const normalized = {
       source: 'whatsapp',
       name: body.ProfileName || 'WhatsApp User',
@@ -177,9 +125,9 @@ router.post('/whatsapp', async (req, res) => {
 
     const lead = new Lead(normalized);
     lead.addActivity('lead_received', 'From WhatsApp');
+    lead.status = 'pending';
     await lead.save();
 
-    const { scoreLead } = require('../services/aiService');
     const aiScore = await scoreLead(normalized);
     lead.score = aiScore.score;
     lead.intent = aiScore.intent;
@@ -187,17 +135,66 @@ router.post('/whatsapp', async (req, res) => {
     lead.interest = aiScore.interest;
     await lead.save();
 
-    const { notifyNewLead } = require('../services/telegramService');
     const msgId = await notifyNewLead(lead, aiScore);
     lead.telegramMessageId = msgId;
     await lead.save();
 
+    console.log(`📱 Telegram notified for new WhatsApp lead: ${lead.name}`);
     res.sendStatus(200);
+
   } catch (error) {
     console.error('❌ WhatsApp error:', error);
     res.sendStatus(200);
   }
 });
 
+// ✅ Generic lead receiver - website, instagram, facebook etc
+router.post('/:source', async (req, res) => {
+  try {
+    const { source } = req.params;
+    const normalized = normalizeLead(source, req.body);
+
+    if (!normalized.message && !normalized.email && !normalized.phone) {
+      return res.status(200).json({ status: 'ignored' });
+    }
+
+    // Prevent duplicate leads within 1 hour
+    if (normalized.sourceUserId) {
+      const existing = await Lead.findOne({
+        sourceUserId: normalized.sourceUserId,
+        createdAt: { $gte: new Date(Date.now() - 60 * 60 * 1000) }
+      });
+      if (existing) return res.status(200).json({ status: 'duplicate' });
+    }
+
+    // Save lead
+    const lead = new Lead(normalized);
+    lead.status = 'pending';
+    lead.addActivity('lead_received', `From ${source}`);
+    await lead.save();
+
+    // AI score
+    const aiScore = await scoreLead(normalized);
+    lead.score = aiScore.score;
+    lead.intent = aiScore.intent;
+    lead.scoreReason = aiScore.scoreReason;
+    lead.interest = aiScore.interest;
+    lead.addActivity('ai_scored', `Score: ${aiScore.score}/10`);
+    await lead.save();
+
+    // Notify Telegram - CC must APPROVE first
+    // WhatsApp + Email sent ONLY after approval (in telegram.js)
+    const msgId = await notifyNewLead(lead, aiScore);
+    lead.telegramMessageId = msgId;
+    await lead.save();
+
+    console.log(`📩 New lead from ${source} - waiting for CC approval`);
+    res.status(200).json({ status: 'received', leadId: lead._id });
+
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 module.exports = router;

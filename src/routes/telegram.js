@@ -19,15 +19,17 @@ function initTelegramHandlers() {
         case 'approve': {
   const { sendLeadConfirmationEmail } = require('../services/emailService');
   const { sendApprovalMessage } = require('../services/whatsappService');
-  lead.status = 'active';  // ADD THIS LINE
+  lead.status = 'active';
   lead.addActivity('approved', 'CC approved');
   await lead.save();
-  await answerCallback(query.id, '✅ Approved! Sending email + WhatsApp now...');
-  await editMessage(query.message.message_id, `✅ *APPROVED* — ${lead.name} (${lead.source})\n📧 Email + 📱 WhatsApp sent!\nAI is handling this conversation.`);
-  // Send both simultaneously
+  await answerCallback(query.id, '✅ Approved! Sending WhatsApp + Email now...');
+  await editMessage(query.message.message_id, 
+    `✅ *APPROVED* — ${lead.name} (${lead.source})\n📱 WhatsApp + 📧 Email sent!\nAI is handling conversation.`
+  );
+  // Send AFTER approval
   await Promise.allSettled([
-    sendLeadConfirmationEmail(lead),
-    sendApprovalMessage(lead)
+    sendApprovalMessage(lead),
+    sendLeadConfirmationEmail(lead)
   ]);
   break;
 }
