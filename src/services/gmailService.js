@@ -6,10 +6,11 @@ const oauth2Client = new google.auth.OAuth2(
   'https://techblitz26-metaminds.onrender.com/gmail/callback'
 );
 
-// Step 1 — Generate auth URL (visit this once to authorize)
+// Step 1 — Generate auth URL
 function getAuthUrl() {
   return oauth2Client.generateAuthUrl({
     access_type: 'offline',
+    prompt: 'consent',
     scope: [
       'https://www.googleapis.com/auth/gmail.readonly',
       'https://www.googleapis.com/auth/gmail.send',
@@ -25,12 +26,12 @@ async function getTokens(code) {
   return tokens;
 }
 
-// Set tokens (call this on startup after first auth)
+// Set tokens on startup
 function setTokens(tokens) {
   oauth2Client.setCredentials(tokens);
 }
 
-// Watch Gmail inbox for new emails
+// Watch Gmail inbox via Pub/Sub
 async function watchGmail() {
   const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
   const res = await gmail.users.watch({
@@ -58,7 +59,7 @@ async function getEmail(messageId) {
   const subject = headers.find(h => h.name === 'Subject')?.value || '';
   const threadId = msg.data.threadId;
 
-  // Extract body
+  // Extract body text
   let body = '';
   const parts = msg.data.payload.parts;
   if (parts) {
@@ -70,29 +71,33 @@ async function getEmail(messageId) {
     body = Buffer.from(msg.data.payload.body.data, 'base64').toString('utf-8');
   }
 
-  // Extract email address from "Name <email>" format
-  const emailMatch = from.match(/<(.+)>/) || [null, from];
-  const fromEmail = emailMatch[1];
+  // Extract email address from "Name <email@example.com>"
+  const emailMatch = from.match(/<(.+?)>/) || [null, from];
+  const fromEmail = emailMatch[1].trim();
   const fromName = from.replace(/<.*>/, '').trim().replace(/"/g, '');
 
   return { from, fromEmail, fromName, subject, body, threadId, messageId };
 }
 
 // Send reply email
-async function sendReply(to, subject, body, threadId) {
+async function sendReply(to, subject, replyBody, threadId) {
   const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-  const email = [
+  const emailLines = [
     `To: ${to}`,
-    `Subject: Re: ${subject}`,
-    `In-Reply-To: ${threadId}`,
-    `References: ${threadId}`,
+    `Subject: Re: ${subject.replace(/^Re: /i, '')}`,
     'Content-Type: text/plain; charset=utf-8',
+    'MIME-Version: 1.0',
     '',
-    body
-  ].join('\n');
+    replyBody
+  ];
 
-  const encoded = Buffer.from(email).toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
+  const email = emailLines.join('\n');
+  const encoded = Buffer.from(email)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
 
   await gmail.users.messages.send({
     userId: 'me',
@@ -115,4 +120,13 @@ async function markAsRead(messageId) {
   });
 }
 
-module.exports = { getAuthUrl, getTokens, setTokens, watchGmail, getEmail, sendReply, markAsRead };
+module.exports = {
+  oauth2Client,
+  getAuthUrl,
+  getTokens,
+  setTokens,
+  watchGmail,
+  getEmail,
+  sendReply,
+  markAsRead
+};
