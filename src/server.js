@@ -109,6 +109,14 @@ if (process.env.RENDER === 'true') {
   });
 }
 
+app.get('/privacy', (req, res) => {
+  res.send('<h1>Privacy Policy</h1><p>MetaMinds Lead Agent - We collect lead data to help businesses respond to customers. Data is stored securely in MongoDB Atlas.</p>');
+});
+
+app.get('/terms', (req, res) => {
+  res.send('<h1>Terms of Service</h1><p>MetaMinds Lead Agent - By using this service you agree to our terms.</p>');
+});
+
 // Follow-ups every hour
 setInterval(() => runFollowUps().catch(console.error), 60 * 60 * 1000);
 
