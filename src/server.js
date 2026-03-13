@@ -27,17 +27,20 @@ app.get('/', (req, res) => {
 
 initTelegramHandlers();
 // Set Telegram webhook for production
+// Set Telegram webhook for production
 if (process.env.RENDER === 'true') {
-  const { getBot } = require('./routes/telegram');
-  const RENDER_URL = process.env.RENDER_URL || 'https://techblitz26-metaminds.onrender.com';
-  getBot().setWebHook(`${RENDER_URL}/telegram-webhook`);
+  const { getBot } = require('./services/telegramService');
+  const RENDER_URL = 'https://techblitz26-metaminds.onrender.com';
   
-  // Receive telegram updates via webhook
+  setTimeout(async () => {
+    await getBot().setWebHook(`${RENDER_URL}/telegram-webhook`);
+    console.log('✅ Telegram webhook mode active');
+  }, 3000);
+
   app.post('/telegram-webhook', (req, res) => {
     getBot().processUpdate(req.body);
     res.sendStatus(200);
   });
-  console.log('✅ Telegram webhook mode active');
 }
 
 setInterval(() => runFollowUps().catch(console.error), 60 * 60 * 1000);
