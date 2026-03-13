@@ -48,6 +48,20 @@ if (process.env.RENDER === 'true') {
     getBot().processUpdate(req.body);
     res.sendStatus(200);
   });
+}if (process.env.RENDER === 'true') {
+  const { getBot } = require('./services/telegramService');
+  const RENDER_URL = 'https://techblitz26-metaminds.onrender.com';
+  
+  setTimeout(async () => {
+    await getBot().setWebHook(`${RENDER_URL}/telegram-webhook`);
+    console.log('✅ Telegram webhook mode active');
+  }, 3000);
+
+  app.post('/telegram-webhook', (req, res) => {
+    console.log('📩 Telegram update received:', JSON.stringify(req.body));
+    getBot().processUpdate(req.body);
+    res.sendStatus(200);
+  });
 }
 
 setInterval(() => runFollowUps().catch(console.error), 60 * 60 * 1000);

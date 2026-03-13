@@ -126,38 +126,46 @@ router.post('/whatsapp', async (req, res) => {
     if (!from || !message) return res.sendStatus(200);
 
     const last10 = from.replace(/\D/g, '').slice(-10);
+    console.log(`🔍 Incoming from: ${from}, last10: ${last10}`);
 
-    // ✅ FIRST check if existing active lead exists
-    const allActiveLeads = await Lead.find({ 
-  status: { $in: ['approved', 'active', 'pending'] } 
-});
+    // Find existing lead by phone
+    const allLeads = await Lead.find({});
+    console.log(`📋 Total leads in DB: ${allLeads.length}`);
+    allLeads.forEach(l => {
+      console.log(`  - ${l.name} | phone: ${l.phone} | status: ${l.status}`);
+    });
 
-    const existingLead = allActiveLeads.find(l => {
-  if (!l.phone) return false;
-  const storedLast10 = l.phone.replace(/\D/g, '').slice(-10);
-  const incomingLast10 = last10;
-  console.log(`Comparing stored: ${storedLast10} vs incoming: ${incomingLast10}`);
-  return storedLast10 === incomingLast10;
-});
+    const existingLead = allLeads.find(l => {
+      if (!l.phone) return false;
+      const stored = l.phone.replace(/\D/g, '').slice(-10);
+      console.log(`  Comparing: stored=${stored} vs incoming=${last10}`);
+      return stored === last10;
+    });
 
-console.log(`🔍 Found lead: ${existingLead ? existingLead.name : 'NONE'}`);
-
-    // ✅ If existing lead found — just continue conversation, NO telegram alert
     if (existingLead) {
-      console.log(`✅ Continuing conversation with ${existingLead.name}`);
+      console.log(`✅ Found lead: ${existingLead.name} status: ${existingLead.status}`);
+
+      // Only reply if approved or active
+      if (!['approved', 'active'].includes(existingLead.status)) {
+        console.log(`⚠️ Lead not approved yet, ignoring`);
+        return res.sendStatus(200);
+      }
+
+      // Continue conversation - NO telegram needed
       const { handleCustomerMessage } = require('../services/conversationService');
       const aiReply = await handleCustomerMessage(existingLead._id, message);
+
       if (aiReply) {
         const { sendWhatsApp } = require('../services/whatsappService');
         await sendWhatsApp(from, aiReply);
-        console.log(`🤖 AI replied to ${existingLead.name}`);
+        console.log(`🤖 AI replied: ${aiReply}`);
       }
+
       return res.sendStatus(200);
     }
 
-    // ❌ No existing lead — this is a brand new customer
-    // Create lead and notify Telegram for approval
-    console.log(`🆕 New WhatsApp lead from ${from}`);
+    // Brand new number - create lead and ask CC
+    console.log(`🆕 New number ${from} - creating lead`);
     const normalized = {
       source: 'whatsapp',
       name: body.ProfileName || 'WhatsApp User',
