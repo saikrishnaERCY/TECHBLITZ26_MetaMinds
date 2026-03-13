@@ -7,7 +7,11 @@ const { initTelegramHandlers } = require('./routes/telegram');
 const { runFollowUps } = require('./services/conversationService');
 
 const app = express();
-app.use(cors({ origin: '*' }));
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.static('public'));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
