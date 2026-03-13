@@ -24,6 +24,10 @@ app.get('/', (req, res) => {
 initTelegramHandlers();
 
 setInterval(() => runFollowUps().catch(console.error), 60 * 60 * 1000);
+setInterval(() => {
+  require('https').get(`https://metamind-lead-agent.onrender.com`);
+  console.log('🏓 Keep-alive ping sent');
+}, 14 * 60 * 1000); // every 14 minutes
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
